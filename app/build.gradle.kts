@@ -10,7 +10,6 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.fabrics.pocket"
         minSdk = 31
         targetSdk = 37
         versionCode = 1
@@ -19,8 +18,20 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    flavorDimensions += "app"
+    productFlavors {
+        create("pocket") {
+            dimension = "app"
+            applicationId = "com.fabrics.pocket"
+        }
+    }
+
     buildTypes {
+        debug {
+            buildConfigField("String", "START_URL", "\"http://localhost:3000\"")
+        }
         release {
+            buildConfigField("String", "START_URL", "\"\"")
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
@@ -33,6 +44,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
