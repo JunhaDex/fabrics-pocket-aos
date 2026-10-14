@@ -23,15 +23,18 @@ android {
         create("pocket") {
             dimension = "app"
             applicationId = "com.fabrics.pocket"
+            manifestPlaceholders["screenOrientation"] = "unspecified"
         }
     }
 
     buildTypes {
         debug {
             buildConfigField("String", "START_URL", "\"http://localhost:3000\"")
+            buildConfigField("String[]", "ALLOWED_HOSTS", "{\"localhost\"}")
         }
         release {
             buildConfigField("String", "START_URL", "\"\"")
+            buildConfigField("String[]", "ALLOWED_HOSTS", "{}")
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")

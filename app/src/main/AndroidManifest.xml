@@ -18,6 +18,7 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:exported="true"
             android:label="@string/app_name"
+            android:screenOrientation="${screenOrientation}"
             android:theme="@style/Theme.Fabricspocketaos"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

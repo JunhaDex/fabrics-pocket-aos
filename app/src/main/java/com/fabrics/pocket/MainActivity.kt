@@ -1,5 +1,7 @@
 package com.fabrics.pocket
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.webkit.WebResourceError
@@ -7,6 +9,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
@@ -41,12 +45,15 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.fabrics.pocket.ui.theme.FabricspocketaosTheme
+import java.net.URISyntaxException
 
 class MainActivity : ComponentActivity() {
     // 마지막 메인 프레임 로딩이 실패한 URL. null이 아니면 오류 화면을 덮는다.
     private var failedUrl by mutableStateOf<String?>(null)
     // 첫 메인 프레임 로딩이 실패 없이 끝나기 전까지 로딩 화면을 덮는다. 한 번 걷으면 다시 띄우지 않는다.
     private var loading by mutableStateOf(true)
+    // 웹 히스토리가 있을 때만 켠다. 꺼져 있으면 시스템 기본 동작(predictive back 포함)에 맡긴다.
+    private lateinit var back: OnBackPressedCallback
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,9 +61,12 @@ class MainActivity : ComponentActivity() {
         val webView = WebView(this).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            // 문서 교체 사이에 기본 흰 배경이 비치지 않도록 시작 화면과 같은 배경색을 쓴다.
+            setBackgroundColor(getColor(R.color.background))
             webViewClient = ShellClient()
             loadUrl(BuildConfig.START_URL)
         }
+        back = onBackPressedDispatcher.addCallback(this, enabled = false) { webView.goBack() }
         // 로고 자리. adaptive icon은 painterResource로 읽을 수 없어 bitmap으로 변환한다.
         val logo = ContextCompat.getDrawable(this, R.mipmap.ic_launcher)?.toBitmap()?.asImageBitmap()
         setContent {
@@ -73,6 +83,37 @@ class MainActivity : ComponentActivity() {
 
     private inner class ShellClient : WebViewClient() {
         private var loadFailed = false
+
+        // 허용 목록 밖의 메인 프레임 이동은 OS에 넘긴다. 내부 이동은 loadUrl로 다시 띄우지 않고
+        // 웹뷰가 그대로 처리하게 둔다(cross-document View Transitions 유지).
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            if (!request.isForMainFrame) return false
+            val uri = request.url
+            when (uri.scheme) {
+                "http", "https" -> if (uri.host in BuildConfig.ALLOWED_HOSTS) return false
+                "about", "data", "blob", "javascript" -> return false
+            }
+            try {
+                startActivity(
+                    if (uri.scheme == "intent") {
+                        Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME).apply {
+                            addCategory(Intent.CATEGORY_BROWSABLE)
+                            component = null
+                            selector = null
+                        }
+                    } else Intent(Intent.ACTION_VIEW, uri)
+                )
+            } catch (e: ActivityNotFoundException) {
+                // 처리할 앱이 없으면 무시한다.
+            } catch (e: URISyntaxException) {
+                // 형식이 잘못된 intent: URL은 무시한다.
+            }
+            return true
+        }
+
+        override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+            back.isEnabled = view.canGoBack()
+        }
 
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
             loadFailed = false
