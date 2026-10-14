@@ -3,7 +3,9 @@ package com.fabrics.pocket
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -44,6 +46,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.fabrics.pocket.bridge.Bridge
+import com.fabrics.pocket.bridge.BridgeHandler
+import com.fabrics.pocket.bridge.BridgeResult
+import com.fabrics.pocket.bridge.ErrorCode
 import com.fabrics.pocket.ui.theme.FabricspocketaosTheme
 import java.net.URISyntaxException
 
@@ -58,14 +66,29 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val bridge = Bridge(
+            context = this,
+            handlers = mapOf("app.openSettings" to openSettings),
+            allowedHosts = BuildConfig.ALLOWED_HOSTS.toSet(),
+            runtimeVersion = BuildConfig.RUNTIME_VERSION,
+        )
         val webView = WebView(this).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            // 기본 UA를 유지하고 끝에 앱 토큰을 덧붙인다.
+            settings.userAgentString = "${settings.userAgentString} ${BuildConfig.APP_TOKEN}/${BuildConfig.VERSION_NAME}"
             // 문서 교체 사이에 기본 흰 배경이 비치지 않도록 시작 화면과 같은 배경색을 쓴다.
             setBackgroundColor(getColor(R.color.background))
             webViewClient = ShellClient()
+            bridge.attach(this, BuildConfig.START_URL)
             loadUrl(BuildConfig.START_URL)
         }
+        // 포그라운드 복귀를 알린다. 콜드 스타트의 첫 ON_START는 보내지 않는다.
+        var started = false
+        lifecycle.addObserver(LifecycleEventObserver { _, event ->
+            if (event != Lifecycle.Event.ON_START) return@LifecycleEventObserver
+            if (started) bridge.emit("app.resume") else started = true
+        })
         back = onBackPressedDispatcher.addCallback(this, enabled = false) { webView.goBack() }
         // 로고 자리. adaptive icon은 painterResource로 읽을 수 없어 bitmap으로 변환한다.
         val logo = ContextCompat.getDrawable(this, R.mipmap.ic_launcher)?.toBitmap()?.asImageBitmap()
@@ -78,6 +101,16 @@ class MainActivity : ComponentActivity() {
                     failedUrl?.let { url -> LoadError(onRetry = { webView.loadUrl(url) }) }
                 }
             }
+        }
+    }
+
+    // 이 앱의 시스템 설정 화면을 연다. 설정 화면을 연 시점에 ok로 응답한다.
+    private val openSettings = BridgeHandler { _, reply ->
+        try {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+            reply(BridgeResult.Ok())
+        } catch (e: ActivityNotFoundException) {
+            reply(BridgeResult.Error(ErrorCode.UNAVAILABLE))
         }
     }
 
